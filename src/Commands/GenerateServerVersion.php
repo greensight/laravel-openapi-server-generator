@@ -85,7 +85,11 @@ class GenerateServerVersion extends Command {
         $inputFile = $this->getFile();
         $invokerPackage = $this->getInvokerPackage();
 
-        $command = "$bin generate -i $inputFile -g php -p 'invokerPackage=$invokerPackage,modelPackage=$modelPackage' -o $this->tempDir";
+        if (PHP_OS_FAMILY === 'Windows') {
+            $command = "$bin generate -i $inputFile -g php -p \"invokerPackage=$invokerPackage,modelPackage=$modelPackage\" -o $this->tempDir";
+        } else {
+            $command = "$bin generate -i $inputFile -g php -p 'invokerPackage=$invokerPackage,modelPackage=$modelPackage' -o $this->tempDir";
+        }
 
         if ($this->templateDir) {
             $command .= " -t " . escapeshellarg($this->templateDir);
@@ -99,11 +103,9 @@ class GenerateServerVersion extends Command {
     private function copyGeneratedDtoToApp(): void
     {
         $this->info("Clearing destination dir: " . $this->getAppPathToDto());
-        
         $this->clearAppDir();
 
         $this->info("Copying generated DTO files to destination dir: " . $this->getAppPathToDto());
-        
         $this->copyDto();
 
         $this->info("Removing temporary generated dir: " . $this->tempDir);
@@ -112,25 +114,44 @@ class GenerateServerVersion extends Command {
     }
 
     private function clearAppDir(): void {
-        shell_exec('rm -rf ' . $this->getAppPathToModels());
-        shell_exec('mkdir -p ' . $this->getAppPathToModels());
+        if (PHP_OS_FAMILY === 'Windows') {
+            shell_exec('rd /s /q ' . $this->getAppPathToModels());
+            shell_exec('mkdir ' . $this->getAppPathToModels());
+        } else {
+            shell_exec('rm -rf ' . $this->getAppPathToModels());
+            shell_exec('mkdir -p ' . $this->getAppPathToModels());
+        }
     }
 
     private function copyDto(): void
     {
         if ($this->onlyEnumsMode) {
             $modelsPath = $this->getAppPathToModels();
-            shell_exec("find $this->tempDir/lib/Dto -name \*Enum.php -exec cp {} $modelsPath \;");
+            if (PHP_OS_FAMILY === 'Windows') {
+                shell_exec("for /R $this->tempDir\lib\Dto %f in (*Enum.php) do xcopy /Y %f $modelsPath");
+            } else {
+                shell_exec("find $this->tempDir/lib/Dto -name \*Enum.php -exec cp {} $modelsPath \;");
+            }
         } else {
-            shell_exec("cp -rf $this->tempDir/lib/Dto " . $this->getAppPathToDto());
-            shell_exec("cp -f $this->tempDir/lib/Configuration.php " . $this->getAppPathToDto());
-            shell_exec("cp -n $this->tempDir/lib/ObjectSerializer.php " . $this->getAppPathToDto());
+            if (PHP_OS_FAMILY === 'Windows') {
+                shell_exec("xcopy /Y /I $this->tempDir\lib\Dto " . $this->getAppPathToDto() . "\Dto");
+                shell_exec("xcopy /Y $this->tempDir\lib\Configuration.php " . $this->getAppPathToDto());
+                shell_exec("xcopy /Y /D $this->tempDir\lib\ObjectSerializer.php " . $this->getAppPathToDto());
+            } else {
+                shell_exec("cp -rf $this->tempDir/lib/Dto " . $this->getAppPathToDto());
+                shell_exec("cp -f $this->tempDir/lib/Configuration.php " . $this->getAppPathToDto());
+                shell_exec("cp -n $this->tempDir/lib/ObjectSerializer.php " . $this->getAppPathToDto());
+            }
         }
     }
 
     private function removeGeneratedDto(): void
     {
-        shell_exec("rm -rf $this->tempDir");
+        if (PHP_OS_FAMILY === 'Windows') {
+            shell_exec("rd /s /q $this->tempDir");
+        } else {
+            shell_exec("rm -rf $this->tempDir");
+        }
     }
 
     private function patchModels(): void
@@ -204,9 +225,11 @@ class GenerateServerVersion extends Command {
 
     private function getInvokerPackage() 
     {
+        $separator = PHP_OS_FAMILY === 'Windows' ? '\\' : '\\\\';
+
         return collect([
             'App',
-            str_replace(DIRECTORY_SEPARATOR, '\\\\', $this->replaceVersionPlaceHolderInPath($this->destinationDir))
-        ])->join('\\\\');
+            str_replace(DIRECTORY_SEPARATOR, $separator, $this->replaceVersionPlaceHolderInPath($this->destinationDir))
+        ])->join($separator);
     }
 }
